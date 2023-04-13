@@ -1,0 +1,977 @@
+---
+title: "Pollution, agricultural productivity, and development: Evidence from coal plants in India"
+subtitle: 
+author: 
+  - "Joshua D. Merfeld <br> KDI School and IZA"
+date: '`r Sys.Date()`'
+output:
+  xaringan::moon_reader:
+    css: xaringan-themer.css
+    nature:
+      slideNumberFormat: "%current%"
+      highlightStyle: github
+      highlightLines: true
+      ratio: 16:9
+      countIncrementalSlides: true
+---
+
+```{r setup, include=FALSE}
+options(htmltools.dir.version = FALSE)
+knitr::opts_chunk$set(
+                      fig.width = 9, fig.height = 3.5, fig.retina = 3,
+                      out.width = "100%",
+                      cache = FALSE,
+                      echo = TRUE,
+                      message = FALSE, 
+                      warning = FALSE,
+                      hiline = TRUE
+                      )
+
+
+library(sf)
+library(sp)
+library(tidyverse)
+library(gganimate)
+library(transformr)
+library(gifski)
+library(ggthemes)
+library(scales)
+library(RColorBrewer)
+library(kableExtra)
+library(ggpubr)
+library(rticles)
+library(stats)
+library(broom)
+library(extrafont)
+library(fixest)
+library(modelsummary)
+library(openxlsx)
+library(raster)
+library(lubridate)
+library(png)
+loadfonts()  # Must be run once in each session (markdown is a new "session" each time you render/knit)
+
+# Sets wd to folder this script is in so we can create relative paths instead of absolute paths
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+# We want to get the wd up to the main folder
+# Need to go up three levels
+setwd('..')
+setwd('..')
+setwd('..')
+# Double check
+getwd()    # check
+
+
+reportP <- function(pValue){
+  if (pValue < 0.001){
+    result <- "p < 0.001"
+  } else {
+    result <- sprintf("p = %.3f", pValue) # inserts a float into a string and simultaneously do rounding
+  }
+  return(result)
+}
+
+reportDec <- function(dec){
+  
+    result <- sprintf("%.3f", dec) # inserts a float into a string and simultaneously do rounding
+  
+  return(result)
+}
+
+reportDecOne <- function(dec){
+  
+    result <- sprintf("%.1f", dec) # inserts a float into a string and simultaneously do rounding
+  
+  return(result)
+}
+
+reportPercent <- function(dec){
+  
+    result <- sprintf("%.1f", 100*dec) # inserts a float into a string and simultaneously do rounding
+  
+  return(result)
+}
+
+commaNum <- function(large){
+  
+  
+  result <- formatC(large, big.mark = ",")
+
+  return(result)
+}
+
+
+# Shapefile of india
+india_shape <- read_sf("data/spatial/shapefiles/state.shp")
+
+
+
+# Coal plants
+### Load raw data ----------------------------------------------------------------------------------
+
+plants <- read.xlsx("data/raw/coal_plants.xlsx", sheet = "Units")
+# India only
+plants <- plants %>% filter(Country=="India")
+# Also want only things with a non-missing year
+plants <- plants %>% filter(is.na(Year)==F)
+
+# Just keep what we want 
+plants <- plants %>% dplyr::select(plant_id = ParentID, 
+                                   unit_id = Tracker.ID, 
+                                   capacity = `Capacity.(MW)`, 
+                                   year_built = Year, 
+                                   year_retired = RETIRED, 
+                                   lat = Latitude, 
+                                   lon = Longitude)
+
+plants <- plants %>% mutate(capacity = capacity/1000)
+
+# long
+plantsyearly <- c()
+for (year in 1990:2015){
+  plantstemp <- plants %>% filter(year_built<=year & (year_retired>year | is.na(year_retired)==TRUE))
+  plantstemp <- plantstemp %>%
+                  group_by(plant_id) %>%
+                  mutate(capacity = sum(capacity)) %>%
+                  filter(row_number()==1) %>%
+                  ungroup() %>%
+                  dplyr::select(plant_id, capacity, lat, lon)
+  plantstemp$year <- year
+  plantsyearly <- rbind(plantsyearly, plantstemp)
+}
+
+
+# Wind example
+# district
+districts <- read_sf(paste0("data/spatial/districts/districts.shp"))
+districts <- districts %>% 
+                dplyr::select(state = ST_CEN_CD, district = DT_CEN_CD, state_name = ST_NM, district_name = DISTRICT)
+districts <- districts %>% filter(state=="23" & district=="07")
+# Villages
+villages <- read_sf(paste0("data/spatial/villages_overlap/villages_overlap.shp"))
+villages <- villages %>% mutate(shrid = paste0(pc11_s_id, "-", pc11_tv_id)) %>%
+                          dplyr::select(shrid, state = ST_CEN_CD, district = DT_CEN_CD, state_name = ST_NM, district_name = DISTRICT)
+villages <- villages %>% filter(state=="23" & district=="07")
+# Go through two months worth of days
+date <- as_date("2010-01-01")
+villageswind <- c()
+for (add_day in 1:100){
+  wind <- read_csv(paste0("data/clean/wind_ntl/days/date_2010-", month(date), "-", day(date), ".csv")) %>% as_tibble()
+  wind <- wind[,1:2]
+  colnames(wind) <- c("shrid", "indicator")
+  villagestemp <- villages %>% left_join(wind, by = "shrid")
+  villagestemp$date <- date
+  
+  villageswind <- rbind(villageswind, villagestemp)
+  
+  date <- date + 1
+}
+
+villageswind <- villageswind %>% st_set_crs(st_crs(districts))
+
+
+
+
+# Tables
+plantresultstable <- readRDS("pollution_development/draft/tables/plantresultstable.rds")
+pollutiontable <- readRDS("pollution_development/draft/tables/pollutiontable.rds")
+yield1reducedform <- readRDS("pollution_development/draft/tables/yield1reducedform.rds")
+yield2naive <- readRDS("pollution_development/draft/tables/yield2naive.rds")
+yield3ivmain <- readRDS("pollution_development/draft/tables/yield3ivmain.rds")
+yield4monthly <- readRDS("pollution_development/draft/tables/yield4monthly.rds")
+yield5heterogeneity <- readRDS("pollution_development/draft/tables/yield5heterogeneity.rds")
+yield6leads <- readRDS("pollution_development/draft/tables/yield6leads.rds")
+yield7ivdiffindiff <- readRDS("pollution_development/draft/tables/yield7ivdiffindiff.rds")
+labor1all <- readRDS("pollution_development/draft/tables/labor1all.rds")
+labor2rural <- readRDS("pollution_development/draft/tables/labor2rural.rds")
+labor3month <- readRDS("pollution_development/draft/tables/labor3month.rds")
+laborplot <- readRDS("pollution_development/draft/tables/laborplot.rds")
+monthplot <- readRDS("pollution_development/draft/tables/monthplot.rds")
+opplot <- readRDS("pollution_development/draft/tables/opplot.rds")
+
+```
+
+```{r xaringan-themer, include=FALSE, warning=FALSE}
+library(xaringanthemer)
+# style_duo_accent(
+#   primary_color = "#006334",
+#   secondary_color = "#A7A9AC",
+#   inverse_header_color = "#FFFFFF"
+# )
+# style_mono_light(
+#                  base_color = "#006334"
+#                  )
+style_duo(
+          primary_color = "#A7A9AC", 
+          secondary_color = "#006334"
+          )
+```
+
+```{css, echo=F}
+    /* Table width = 100% max-width */
+
+    <!-- .remark-slide table{ -->
+    <!--     width: 100%; -->
+    <!-- } -->
+
+    /* Change the background color to white for shaded rows (even rows) */
+
+    .remark-slide thead, .remark-slide tr:nth-child(n) {
+        background-color: white;
+    }
+    
+    tfoot {
+      font-size: 80%;
+    }
+```
+
+
+
+
+
+## Coal and energy worldwide
+
+- Coal one of most common energy sources worldwide
+  - Reached an all-time high in 2021 <small><small>(www.iea.org/reports/coal-fired-electricity)</small></small>
+
+- india villages complain coal "power plant" (Adaniwatch)
+
+
+
+
+
+---
+
+
+```{r energypng, echo = FALSE, message = FALSE, warning = FALSE}
+
+knitr::include_graphics(
+                        path = "energy.png",
+                        auto_pdf = TRUE
+                        )
+
+```
+
+
+
+
+
+---
+
+## Coal and energy in India
+
+- From 1990 to 2010: coal generation from 42.4 gigawatts to more than 100
+- Obvious benefits to more power <small><small>(Dinkelman 2011; Kline and Moretti 2014; Rud 2012; Van de Walle et al. 2017)</small></small>
+
+
+
+
+
+
+
+
+
+---
+
+## Downsides, too
+
+- But power generation can have downsides, too
+  - Especially true near plants: pollution a major concern
+- Climate change and pollutants like SO2, mercury, etc. <small><small>(www.eia.gov/energyexplained/coal/coal-and-the-environment.php)</small></small>
+- Long literature on negative effects of pollution 
+  - Health <small><small>(Arceo, Hanna, and Oliva 2016; Brunekreef and Holgate 2002; Deryugina et al. 2019; Kampa and Castanas 2008; Pope III and Dockery 2006)</small></small>
+  - Productivity/labor allocation <small><small>(Chang et al. 2019; Ebenstein, Lavy, and Roth 2016; Hanna and Oliva 2015; He, Liu, and Salvo 2019; Wen and Burke 2022)</small></small>
+
+
+
+
+---
+
+## This paper
+
+- Effects of pollution from coal plants on agricultural productivity in India
+  - Previous evidence from gold mines (Aragon and Rud 2016) and workers in California (Graff Zivin and Neidell 2012)
+- Higher exposure to pollution leads to lower agricultural productivity
+  - Exposure defined as wind direction from coal plants towards villages
+  - Also instrument for particulate matter 2.5 (PM 2.5)
+
+
+
+---
+
+## This paper
+
+- Effects on labor allocation decisions, as well
+- Largest effects on labor and yield in same month
+  - Around very beginning of the monsoon season (June)
+
+
+
+
+
+---
+
+## General idea
+- Coal plants open in a given year
+- Plot wind direction each day
+  - Exposure means wind blowing from coal plant to village (within 30km)
+  - Aggregate up to desired level (e.g. season, month, week)
+
+
+
+
+
+
+
+---
+
+## Data sources
+
+```{r data, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+data <- matrix(NA, nrow = 8, ncol = 3)
+rownames(data) <- c("shapefile", "coal plants", "wind", "pollution", "agriculture", "nightlights", "weather", "labor")
+colnames(data) <- c("source", "geographic coverage", "temporal coverage")
+data[1,1] <- "Asher et al. (2021)"
+data[2,1] <- "Global Energy Monitor"
+data[3,1] <- "NCAR"
+data[4,1] <- "Hammer et al. (2020)"
+data[5,1] <- "Angopadhyay et al. (2022)"
+data[6,1] <- "Asher et al. (2021)"
+data[7,1] <- "TerraClimate"
+data[8,1] <- "National Sample Survey (NSS)"
+data[1,2] <- "India"
+data[2,2] <- "global"
+data[3,2] <- "global"
+data[4,2] <- "global"
+data[5,2] <- "India"
+data[6,2] <- "India"
+data[7,2] <- "global"
+data[8,2] <- "India"
+data[1,3] <- " "
+data[2,3] <- "yearly"
+data[3,3] <- "daily"
+data[4,3] <- "monthly"
+data[5,3] <- "two seasons/year"
+data[6,3] <- "yearly"
+data[7,3] <- "monthly"
+data[8,3] <- "daily interviews"
+
+# Table
+kable(
+      data,
+      align = "ccccc", booktabs = TRUE, linesep = "", escape = TRUE
+      ) %>%
+  footnote(
+           general = "Global Energy Monitor: globalenergymonitor.org/projects/global-coal-plant-tracker. NCAR: climatedataguide.ucar.edu/. TerraClimate: www.climatologylab.org/terraclimate.html",
+           general_title = "",
+           threeparttable = TRUE,
+           footnote_as_chunk = TRUE
+           ) %>%
+  column_spec(1, width = "2cm") %>%
+  column_spec(2,width = "4.5cm") %>%
+  column_spec(c(3:4),width = "3.5cm") %>%
+  kable_styling(latex_options = "HOLD_position") %>%
+  kable_classic_2()
+
+```
+
+
+
+
+
+
+---
+
+## Coal plants over time
+
+```{r plants, echo = FALSE, message = FALSE, warning = FALSE,}
+
+ggplot() +
+    geom_sf(data = india_shape, color = "gray85", fill = "gray80") +
+    geom_point(data = plantsyearly, 
+               aes(x = lon, y = lat, size = capacity),
+               colour = "#006334", alpha = .5) +
+    # Here comes the gganimate code
+    transition_manual(
+                      frames = year,
+                      cumulative = FALSE
+                      ) +
+    labs(title = "year: {current_frame}") +
+    theme(legend.position = "none")
+
+
+
+```
+
+
+
+
+
+
+
+
+---
+
+
+## Wind direction - first 100 days of 2010 in Guna district (MP)
+
+```{r windbase, echo = FALSE, message = FALSE, warning = FALSE,}
+
+ggplot() +
+    geom_sf(data = districts, color = "gray85", fill = "gray80") +
+    geom_sf(data = villageswind %>% filter(date=="2010-01-01"),
+            alpha = .5) +
+    labs(title = "date: 2010-01-01") +
+    theme(legend.position = "none")
+
+
+
+```
+
+
+
+
+
+---
+
+
+## Wind direction - first 100 days of 2010 in Guna district (MP)
+
+```{r wind, echo = FALSE, message = FALSE, warning = FALSE,}
+
+ggplot() +
+    geom_sf(data = villageswind, 
+            aes(fill = indicator),
+            alpha = .5) +
+    # Here comes the gganimate code
+    transition_manual(
+                      frames = date,
+                      cumulative = FALSE
+                      ) +
+    labs(title = "date: {current_frame}") +
+    theme(legend.position = "none")
+
+
+
+```
+
+
+
+
+
+---
+
+## Empirical strategy
+
+First stage
+
+$$pm_{it} = \alpha^1_{i} + \gamma^1_{t} + \phi^1 wind_{it} + \psi^1 weather_{it} + \varepsilon^1_{it}$$
+
+Second stage
+
+$$yield_{it} = \alpha^2_{i} + \gamma^2_{t} + \phi^2 \hat{pm}_{it} + \psi^2 weather_{it} + \varepsilon^2_{it}$$
+
+
+- i indexes villages (districts for labor)
+- t indexes time (where time differs based on the analysis)
+- standard errors clustered at village (or district) throughout
+- common use of stars (one indicates 0.10) throughout
+
+
+
+
+
+
+
+---
+
+## Where do coal plants open?
+
+
+```{r plantresultstable, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+# Table
+colnames(plantresultstable) <- c("1991", "2001", "2001", "2011")
+kable(
+      plantresultstable,
+      align = "cccc", booktabs = TRUE, linesep = "", escape = FALSE
+      ) %>%
+  column_spec(1, width = "3cm") %>%
+  column_spec(c(2:5),width = "2cm") %>%
+  row_spec(9, hline_after = TRUE) %>%
+  add_header_above(c(" ", "1991 census" = 2, "2001 census" = 2)) %>%
+  kable_classic_2()
+
+```
+
+
+
+
+
+
+---
+
+## Reduced form - wind and yield
+
+
+```{r yieldtable, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+# Table
+colnames(yield1reducedform) <- c("(1)", "(2)", "(3)")
+kable(
+      yield1reducedform,
+      align = "ccc", booktabs = TRUE, linesep = ""
+      ) %>%
+  column_spec(1, width = "3cm") %>%
+  column_spec(c(2:4),width = "2.5cm") %>%
+  row_spec(13, bold = TRUE) %>%
+  row_spec(15, hline_after = TRUE) %>%
+  #add_header_above(c(" ", "all" = 3, "monsoon" = 1, "winter" = 1)) %>%
+  kable_classic_2()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+---
+
+## First stage - particulate matter and exposure, monthly level
+
+```{r pollutiontable, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+# Table
+colnames(pollutiontable) <- c("(1)", "(2)", "(3)", "(4)")
+kable(
+      pollutiontable,
+      align = "cccc", booktabs = TRUE, linesep = ""
+      ) %>%
+  column_spec(1, width = "4cm") %>%
+  column_spec(c(2:5),width = "2cm") %>%
+  row_spec(c(3), bold = TRUE) %>%
+  row_spec(6, hline_after = TRUE) %>%
+  add_header_above(c(" ", "1998-2015" = 2, "2002-2013" = 2)) %>%
+  kable_classic_2()
+
+```
+
+
+
+
+
+
+
+
+
+
+---
+
+## PM and agricultural productivity
+
+```{r yieldtablepm, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+# Table
+colnames(yield2naive) <- c("(1)", "(2)", "(3)")
+kable(
+      yield2naive,
+      align = "ccc", booktabs = TRUE, linesep = ""
+      ) %>%
+  column_spec(1, width = "3cm") %>%
+  column_spec(c(2:4),width = "2.5cm") %>%
+  row_spec(5, bold = TRUE) %>%
+  row_spec(7, hline_after = TRUE) %>%
+  #add_header_above(c(" ", "all" = 3, "monsoon" = 1, "winter" = 1)) %>%
+  kable_classic_2()
+
+```
+
+
+- Likely endogenous
+  - Upward biased?
+
+
+
+
+
+
+
+
+
+
+
+---
+
+## Effects of PM on agricultural productivity
+
+- We are really interested in the effect of _pollution_, not wind
+- Use wind as instrument? Assumes...
+  - Conditional on fixed effects and weather...
+  - Wind only affects agriculture through pollution
+- Reasonable?
+
+
+
+
+
+
+
+
+
+
+---
+
+## Effects of PM on agricultural productivity (IV)
+
+
+```{r yieldtabletwo, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+# Table
+yield3ivmain <- yield3ivmain[,-1]
+colnames(yield3ivmain) <- c("(1)", "(2)", "(3)")
+rownames(yield3ivmain)[8] <- "F (first stage)"
+kable(
+      yield3ivmain,
+      align = "ccc", booktabs = TRUE, linesep = ""
+      ) %>%
+  column_spec(1, width = "3cm") %>%
+  column_spec(c(2:4),width = "2cm") %>%
+  row_spec(5, bold = TRUE) %>%
+  row_spec(7, hline_after = TRUE) %>%
+  #add_header_above(c(" ", "all" = 3, "monsoon" = 1, "winter" = 1)) %>%
+  kable_classic_2()
+
+```
+
+
+
+
+---
+
+## Robustness checks
+
+- Leads of wind direction
+- Only post coal plant opening
+
+
+---
+
+## Heterogeneity
+
+```{r heterogeneity, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+# Table
+colnames(yield5heterogeneity) <- c(">p(50)", "<=p(50)", ">p(50)", "<=p(50)", "")
+rownames(yield5heterogeneity)[c(1, 3)] <- c("PM 2.5", "PM times rain")
+kable(
+      yield5heterogeneity,
+      align = "ccccc", booktabs = TRUE, linesep = ""
+      ) %>%
+  column_spec(1, width = "4.5cm") %>%
+  column_spec(c(2:6),width = "1.8cm") %>%
+  row_spec(c(8), hline_after = TRUE) %>%
+  row_spec(c(6), bold = TRUE) %>%
+  add_header_above(c(" " = 1, "wind" = 2, "yield" = 2, " " = 1)) %>%
+  kable_classic_2()
+
+```
+
+
+
+
+
+---
+
+## Taking stock
+
+- We see clear negative effects of pollution on productivity
+  - Absolute deviation of exposure is approx. 8 days, meaning 2-3 percent change in productivity
+  - Using AD of PM, it's above 20 percent change
+- Key question: what is the driver?
+  - Land?
+  - Labor?
+- Hard to look explicitly at land, so let's look at labor
+
+
+---
+
+
+## National Sample Survey (NSS)
+
+```{r nss, echo = FALSE, message = FALSE, warning = FALSE,}
+
+laborplot
+
+```
+
+
+---
+
+## Problem: only have district identifiers, so aggregate up
+
+
+```{r aggregation, echo = FALSE, message = FALSE, warning = FALSE,}
+
+# Sets wd to folder this script is in so we can create relative paths instead of absolute paths
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+# We want to get the wd up to the main folder
+# Need to go up three levels
+setwd('..')
+setwd('..')
+setwd('..')
+
+# district
+districts <- read_sf(paste0("data/spatial/districts/districts.shp"))
+districts <- districts %>% 
+                dplyr::select(state = ST_CEN_CD, district = DT_CEN_CD, state_name = ST_NM, district_name = DISTRICT)
+districts <- districts %>% filter(state=="23" & district=="07")
+# Villages
+villages <- read_sf(paste0("data/spatial/villages_overlap/villages_overlap.shp"))
+villages <- villages %>% mutate(shrid = paste0(pc11_s_id, "-", pc11_tv_id)) %>%
+                          dplyr::select(shrid, state = ST_CEN_CD, district = DT_CEN_CD, state_name = ST_NM, district_name = DISTRICT)
+villages <- villages %>% filter(state=="23" & district=="07")
+wind <- read_csv(paste0("data/clean/wind_ntl/days/date_2010-1-1.csv")) %>% as_tibble()
+wind$days_sum <- apply(wind[,2:8], 1, FUN = "sum")
+wind <- wind %>% dplyr::select(shrid, days_sum)
+villages <- villages %>% left_join(wind, by = "shrid")
+villages <- villages %>% st_set_crs(st_crs(districts))
+
+ggplot() + 
+  theme_map() +
+  geom_sf(data = districts, fill = NA) +
+  geom_sf(data = villages %>% filter(is.na(days_sum)==F), aes(fill = days_sum), lwd = NA) +
+  scale_fill_viridis_c("exposure (days)", option = "viridis") +
+  labs(x = "lon",
+       y = "lat") +
+  theme(legend.position = c(0.5, 0.05),
+        legend.direction = "horizontal",
+        legend.key.width = unit(0.3, 'cm'),
+        legend.text = element_text(size = 8),
+        legend.background=element_blank() )
+
+```
+
+
+
+
+
+---
+
+## Wind direction and labor allocation, by rural status
+
+
+
+```{r labortablerural, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+# Table
+colnames(labor1all) <- c("all", "all", "self", "wage", "farm", "non-farm")
+colnames(labor2rural) <- c("all", "all", "self", "wage", "farm", "non-farm")
+
+mat1 <- matrix(c("", "", "", "", "", ""), nrow = 1)
+colnames(mat1) <- c("all", "all", "self", "wage", "farm", "non-farm")
+rownames(mat1) <- c("panel a: all")
+mat2 <- matrix(c("", "", "", "", "", ""), nrow = 1)
+colnames(mat2) <- c("all", "all", "self", "wage", "farm", "non-farm")
+rownames(mat2) <- c("panel b: rural")
+
+labortablerural <- rbind(mat1, labor1all[c(1:2, 7:8),], mat2, labor2rural[-c(3:6),], labor2rural[c(3:6),])
+
+kable(
+      labortablerural,
+      align = "cccccc", booktabs = TRUE, linesep = ""
+      ) %>%
+  column_spec(1, width = "3cm") %>%
+  column_spec(c(2:7),width = "1.5cm") %>%
+  row_spec(c(5,10), hline_after = TRUE) %>%
+  row_spec(c(1,6,12), bold = TRUE) %>%
+  kable_classic_2()
+
+```
+
+
+
+
+
+
+
+
+---
+
+## One last check
+
+- Farm labor most common in July 
+- Have monthly values of wind and pollution...
+  - Heterogeneity by month of the season?
+  - Monsoon season only
+  
+
+
+
+
+
+
+---
+
+## Heterogeneity by month, labor
+
+
+
+```{r labortablemonthly, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+# Table
+colnames(labor3month) <- c("farm", "non-farm")
+kable(
+      labor3month,
+      align = "cc", booktabs = TRUE, linesep = ""
+      ) %>%
+  column_spec(1, width = "3cm") %>%
+  column_spec(c(2:3),width = "2cm") %>%
+  row_spec(c(14), hline_after = TRUE) %>%
+  row_spec(c(12), bold = TRUE) %>%
+  kable_classic_2()
+
+```
+
+
+
+
+
+
+---
+
+## Heterogeneity by month, yield
+
+
+
+```{r yieldtablemonthly, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+# Table
+colnames(yield4monthly) <- c("(1)", "(2)")
+yield4monthly <- yield4monthly[c(1:14, nrow(yield4monthly)),]
+kable(
+      yield4monthly,
+      align = "cc", booktabs = TRUE, linesep = ""
+      ) %>%
+  column_spec(1, width = "3cm") %>%
+  column_spec(c(2:3),width = "2cm") %>%
+  row_spec(12, bold = TRUE) %>%
+  row_spec(14, hline_after = TRUE) %>%
+  kable_classic_2()
+
+```
+
+
+
+
+
+
+
+---
+
+## Coal plants or overall pollution?
+
+- I use the location of coal plants to identify high-pollution areas
+- However, some coal plants open part-way through sample
+- Differences-in-differences combined with IV
+  - Differences in coal pollution, specifically, and other forms of pollution
+
+
+
+
+
+---
+
+## Coal plants or overall pollution?
+
+
+```{r ntltable, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+# Table
+colnames(yield7ivdiffindiff) <- c("(1)", "(2)", "(3)")
+kable(
+      yield7ivdiffindiff, caption = "Agricultural productivity and pollution source",
+      align = "ccc", booktabs = TRUE, linesep = ""
+      ) %>%
+  column_spec(1, width = "3cm") %>%
+  column_spec(c(2:4),width = "2cm") %>%
+  row_spec(c(7), bold = TRUE) %>%
+  row_spec(9, hline_after = TRUE) %>%
+  kable_classic_2()
+
+```
+
+
+
+
+
+
+
+
+---
+
+## Conclusion
+
+- Large growth in coal power in India
+  - Other countries, as well
+- Increase in electricity, but downsides as well
+  - Pollution!
+- We already have plenty of evidence on effects of pollution on health
+
+
+
+
+
+
+---
+
+## Conclusion
+
+- Paper presents evidence that villages downwind from coal plants suffer in terms of agricultural productivity
+  - Identification relies on within-village changes across seasons
+- Wind exposure fluctuations lead to changes in agricultural productivity of around 2.4 percent based on mean absolute deviation
+  - Instrumenting for particulate matter, effects are even larger (more than 20 percent)
+- Clear changes in labor allocation at beginning of the season
+  - Yield only changes w.r.t. early-season pollution
+
+
+
+
+
+
+---
+
+## Conclusion
+
+- Overall cost/benefit way beyond scope of paper
+- Instead, results point to importance of the location of pollution sources
+  - Downwind villages suffer
+- 30km radius indicates relatively long-range effects
+
+
+
+
+
+
+---
+
+class: center, middle
+
+<font size = "40"> Thank you! </font>
+
+[https://joshmerfeld.github.io](https://joshmerfeld.github.io) <br>
+Twitter: [@Josh\_Merfeld](twitter.com/Josh_Merfeld)
+
+
+
+
+
+
+
+
