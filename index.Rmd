@@ -7,6 +7,7 @@ date: '`r Sys.Date()`'
 output:
   xaringan::moon_reader:
     css: xaringan-themer.css
+    chakra: libs/remark-latest.min.js
     nature:
       slideNumberFormat: "%current%"
       highlightStyle: github
@@ -18,7 +19,7 @@ output:
 ```{r setup, include=FALSE}
 options(htmltools.dir.version = FALSE)
 knitr::opts_chunk$set(
-                      fig.width = 9, fig.height = 3.5, fig.retina = 3,
+                      fig.width = 9, fig.height = 4, fig.retina = 3,
                       out.width = "100%",
                       cache = FALSE,
                       echo = TRUE,
@@ -49,13 +50,14 @@ library(openxlsx)
 library(raster)
 library(lubridate)
 library(png)
+library(cowplot)
 loadfonts()  # Must be run once in each session (markdown is a new "session" each time you render/knit)
 
 
 
 # We want to get the wd up to the main folder
 # Need to go up two levels
-setwd('..')
+setwd('../../..')
 # Double check
 getwd()    # check
 
@@ -91,9 +93,8 @@ reportPercent <- function(dec){
 }
 
 commaNum <- function(large){
-  
-  
-  result <- formatC(large, big.mark = ",")
+    
+  result <- formatC(large, big.mark = ",", format = "f", drop0trailing = TRUE)
 
   return(result)
 }
@@ -256,10 +257,19 @@ coef_current <- readRDS("pollution_development/draft/tables/coef_current.rds")
 coef_lead <- readRDS("pollution_development/draft/tables/coef_lead.rds")
 yieldrice <- readRDS("pollution_development/draft/tables/yieldrice.rds")
 yieldricestatefe <- readRDS("pollution_development/draft/tables/yieldricestatefe.rds")
+monthlycoefs <- readRDS("pollution_development/draft/tables/monthcoefestimates.rds")
+# counterfactual
+counterfactual <- read_csv("data/counterfactual/sums.csv")
 
 
 plants1990_capacity <- plants %>% filter(year_built<=1990 & (year_retired>1990 | is.na(year_retired)==TRUE))
 plants2010_capacity <- plants %>% filter(year_built<=2010 & (year_retired>2010 | is.na(year_retired)==TRUE))
+
+plantsexample <- plants %>% dplyr::select(lon, lat)
+# now to sf points
+plantsexample <- st_as_sf(SpatialPointsDataFrame(plantsexample, plants %>% dplyr::select(-c(lon, lat)), proj4string = CRS("EPSG:4326")))
+plantsexample <- st_transform(plantsexample, crs = st_crs(districts))
+plantsexample <- st_crop(plantsexample, villageswind)
 
 ```
 
@@ -267,14 +277,18 @@ plants2010_capacity <- plants %>% filter(year_built<=2010 & (year_retired>2010 |
 ```{css, echo=F}
     /* Table width = 100% max-width */
 
-    <!-- .remark-slide table{ -->
-    <!--     width: 100%; -->
-    <!-- } -->
+    /* .remark-slide table{
+      width: 100%;
+    } */
 
     /* Change the background color to white for shaded rows (even rows) */
 
     .remark-slide thead, .remark-slide tr:nth-child(n) {
-      background-color: white;
+      background-color: #A7A9AC;
+    }
+
+    .remark-slide table {
+      background-color: #A7A9AC;
     }
     
     tfoot {
@@ -284,8 +298,27 @@ plants2010_capacity <- plants %>% filter(year_built<=2010 & (year_retired>2010 |
     table{
       border-collapse: collapse;
       border-color: transparent;
-      background-color: "#FFFFFF";
+      background-color: #A7A9AC;
     }
+
+    /* .hljs-github {
+      background-image: url("logo.png");
+      background-position: bottom left;
+      background-size: 10%;
+    }
+
+    .inverse {
+      background-image: url("");
+      background-position: bottom left;
+      background-size: 10%;
+    } */
+
+    .title-slide {
+      background-image: url("logo_title.png");
+      background-position: bottom left;
+      background-size: 20%;
+    }
+
 ```
 
 
@@ -295,19 +328,18 @@ library(xaringanthemer)
 style_duo(
           primary_color = "#A7A9AC", 
           secondary_color = "#006334",
-          table_row_even_background_color = "#FFFFFF"
+          table_row_even_background_color = "#A7A9AC"
           )
 
 ```
 
 
 
-
-
 ## This paper
-
+<br>
 - Effects of pollution on agricultural productivity in India
   - Previous evidence from gold mines (Aragon and Rud 2016) and workers in California (Graff Zivin and Neidell 2012)
+  - Some evidence coal pollution can actually be beneficial (Sanders and Barreca, 2022)<br><br>
 - Higher exposure to pollution leads to lower agricultural productivity
   - Exposure defined as wind direction from coal plants towards villages
   - Also instrument for particulate matter 2.5 (PM 2.5)
@@ -317,11 +349,13 @@ style_duo(
 ---
 
 ## This paper
-
+<br>
 - Larger effects in areas growing more labor-intensive crops
-  - Effects through labor?
+  - Effects through labor?<br><br>
 - Compounding effects of shocks
-  - Weather shocks + pollution = worse than either on its own
+  - Weather shocks + pollution = worse than either on its own<br><br>
+- Coal pollution seems worse than other forms of pollution
+  - Same increase -> larger effects from coal pollution
 
 
 
@@ -329,9 +363,10 @@ style_duo(
 
 ---
 
+
 ## Outline
 
-<br><br>
+<br>
 - General idea and data<br><br>
 - Validating wind direction<br><br>
 - Estimating effects of pollution on agricultural productivity<br><br>
@@ -346,9 +381,11 @@ style_duo(
 
 ---
 
+
 ## General idea
+<br>
 - Identify high-pollution locations based on where coal plants open or will open
-  - Coal plants open in areas where pollution is already high
+  - Coal plants open in areas where pollution is already high<br><br>
 - Plot wind direction each day
   - Exposure means wind blowing from high-pollution locations to village (within 30km)
 
@@ -366,18 +403,20 @@ style_duo(
 ---
 
 
+
 ## Wind direction - first 100 days of 2010 in Guna district (MP)
 
-```{r windbase, echo = FALSE, message = FALSE, warning = FALSE,}
+```{r windbase, echo = FALSE, message = FALSE, warning = FALSE}
 
-ggplot() +
+g1 <- ggplot() +
+    geom_sf(data = plantsexample, color = "#006334", shape = 4) + 
     geom_sf(data = districts, color = "gray85", fill = "gray80") +
     geom_sf(data = villageswind %>% filter(date=="2010-01-01"),
             alpha = .5) +
     labs(title = "date: 2010-01-01") +
-    theme(legend.position = "none")
-
-
+    theme(legend.position = "none") +
+    theme(plot.background = element_rect(fill = "#A7A9AC", color = "#A7A9AC"))
+ggdraw(g1) + theme(plot.background = element_rect(fill = "#A7A9AC", color = "#A7A9AC"))
 
 ```
 
@@ -388,11 +427,13 @@ ggplot() +
 ---
 
 
+
 ## Wind direction - first 100 days of 2010 in Guna district (MP)
 
-```{r wind, echo = FALSE, message = FALSE, warning = FALSE,}
+```{r wind, echo = FALSE, message = FALSE, warning = FALSE, dev.args = list(bg = "transparent")}
 
 ggplot() +
+    geom_sf(data = plantsexample, color = "#006334", shape = 4) + 
     geom_sf(data = villageswind, 
             aes(fill = indicator),
             alpha = .5) +
@@ -402,7 +443,8 @@ ggplot() +
                       cumulative = FALSE
                       ) +
     labs(title = "date: {current_frame}") +
-    theme(legend.position = "none")
+    theme(legend.position = "none") +
+    theme(plot.background = element_rect(fill = "#A7A9AC", color = "#A7A9AC"))
 
 
 
@@ -412,34 +454,13 @@ ggplot() +
 
 
 
----
-
-## Empirical strategy
-
-First stage
-
-$$pm_{it} = \alpha_{i} + \gamma_{t} + \phi wind_{it} + \psi f(weather_{it}) + \varepsilon_{it}$$
-
-Second stage
-
-$$yield_{it} = \delta_{i} + \eta_{t} + \beta \hat{pm}_{it} + \theta f(weather_{it}) + \upsilon_{it}$$
-
-
-- i indexes villages (districts for labor)
-- t indexes time (where time differs based on the analysis)
-- standard errors clustered at village throughout
-- common use of stars (one indicates 0.10) throughout
-
-
-
-
-
-
 
 ---
+
 
 ## Where do coal plants open?
 
+--
 
 ```{r plantresultstable, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
 
@@ -449,11 +470,10 @@ kable(
       plantresultstable,
       align = "cccc", linesep = "", escape = FALSE, format = "html"
       ) %>%
-  column_spec(1, width = "3cm") %>%
-  column_spec(c(2:5),width = "2cm") %>%
+  column_spec(1, width = "8cm") %>%
+  column_spec(c(2:5),width = "4cm") %>%
   row_spec(10, hline_after = TRUE) %>%
-  add_header_above(c(" ", "1991 census" = 2, "2001 census" = 2)) %>%
-  kable_classic_2()
+  add_header_above(c(" ", "1991 census" = 2, "2001 census" = 2))
 
 ```
 
@@ -461,9 +481,40 @@ kable(
 
 
 
+---
+
+
+## Empirical strategy
+
+<br>
+First stage
+
+$$pm_{it} = \alpha_{i} + \gamma_{t} + \phi wind_{it} + \psi f(weather_{it}) + \varepsilon_{it}$$
+
+Second stage
+
+$$yield_{it} = \delta_{i} + \eta_{t} + \beta \hat{pm}_{it} + \theta f(weather_{it}) + \upsilon_{it}$$
+
+- i indexes villages
+- t indexes time (year)
+- standard errors clustered at village throughout
+- common use of stars (one indicates 0.10) throughout
+
+
+
+
 
 
 ---
+
+class: inverse, middle, center
+# Results
+
+
+
+
+---
+
 
 ## Naive regression - yield on pollution
 
@@ -476,11 +527,10 @@ kable(
       yield2naive,
       align = "cccc", linesep = "", format = "html"
       ) %>%
-  column_spec(1, width = "3cm") %>%
-  column_spec(c(2:5),width = "2.5cm") %>%
+  column_spec(1, width = "8cm") %>%
+  column_spec(c(2:5),width = "4cm") %>%
   row_spec(6, bold = TRUE) %>%
-  row_spec(8, hline_after = TRUE) %>%
-  kable_classic_2()
+  row_spec(8, hline_after = TRUE)
 
 ```
 
@@ -490,6 +540,7 @@ kable(
 
 
 ---
+
 
 ## Reduced form - wind and yield
 
@@ -502,11 +553,10 @@ kable(
       yield1reducedform,
       align = "cccc", linesep = "", format = "html"
       ) %>%
-  column_spec(1, width = "3cm") %>%
-  column_spec(c(2:5),width = "2.5cm") %>%
+  column_spec(1, width = "8cm") %>%
+  column_spec(c(2:5),width = "4cm") %>%
   row_spec(6, bold = TRUE) %>%
-  row_spec(8, hline_after = TRUE) %>%
-  kable_classic_2()
+  row_spec(8, hline_after = TRUE)
 
 ```
 
@@ -519,6 +569,7 @@ kable(
 
 
 ---
+
 
 ## First stage - particulate matter and exposure
 
@@ -531,11 +582,10 @@ kable(
       yield3ivmainfirststage,
       align = "cccc", linesep = "", format = "html"
       ) %>%
-  column_spec(1, width = "4cm") %>%
-  column_spec(c(2:5),width = "2cm") %>%
+  column_spec(1, width = "8cm") %>%
+  column_spec(c(2:5),width = "4cm") %>%
   row_spec(6, bold = TRUE) %>%
-  row_spec(8, hline_after = TRUE) %>%
-  kable_classic_2()
+  row_spec(8, hline_after = TRUE)
 
 ```
 
@@ -550,12 +600,13 @@ kable(
 
 ---
 
-## Effects of PM on agricultural productivity
 
-- We are really interested in the effect of _pollution_, not wind
+## Effects of PM on agricultural productivity
+<br>
+- We are really interested in the effect of _pollution_, not wind<br><br>
 - Use wind as instrument? Assumes...
   - Conditional on fixed effects and weather...
-  - Wind only affects agriculture through pollution
+  - Wind only affects agriculture through pollution<br><br>
 - Reasonable?
 
 
@@ -569,6 +620,7 @@ kable(
 
 ---
 
+
 ## Effects of PM on agricultural productivity (IV)
 
 
@@ -581,11 +633,10 @@ kable(
       yield3ivmain,
       align = "cccc", linesep = "", format = "html"
       ) %>%
-  column_spec(1, width = "3cm") %>%
-  column_spec(c(2:5),width = "2cm") %>%
+  column_spec(1, width = "8cm") %>%
+  column_spec(c(2:5),width = "4cm") %>%
   row_spec(6, bold = TRUE) %>%
-  row_spec(8, hline_after = TRUE) %>%
-  kable_classic_2()
+  row_spec(8, hline_after = TRUE)
 
 ```
 
@@ -593,6 +644,7 @@ kable(
 
 
 ---
+
 
 ## Robustness check: leads of wind direction
 
@@ -607,11 +659,10 @@ kable(
       yield3ivmain_lead,
       align = "cc", linesep = "", format = "html"
       ) %>%
-  column_spec(1, width = "3cm") %>%
-  column_spec(c(2:3),width = "2cm") %>%
+  column_spec(1, width = "8cm") %>%
+  column_spec(c(2:3),width = "5cm") %>%
   row_spec(6, bold = TRUE) %>%
-  row_spec(8, hline_after = TRUE) %>%
-  kable_classic_2()
+  row_spec(8, hline_after = TRUE)
 
 ```
 
@@ -621,6 +672,7 @@ kable(
 
 
 ---
+
 
 ## Heterogeneity
 
@@ -633,12 +685,11 @@ kable(
       yield5heterogeneity,
       align = "ccccc", linesep = "", format = "html"
       ) %>%
-  column_spec(1, width = "4.5cm") %>%
-  column_spec(c(2:6),width = "1.8cm") %>%
+  column_spec(1, width = "8cm") %>%
+  column_spec(c(2:6),width = "4cm") %>%
   row_spec(c(6), bold = TRUE) %>%
   row_spec(c(8), hline_after = TRUE) %>%
-  add_header_above(c(" " = 1, "wind" = 2, "yield" = 2, " " = 1)) %>%
-  kable_classic_2()
+  add_header_above(c(" " = 1, "wind" = 2, "yield" = 2, " " = 1))
 
 ```
 
@@ -646,34 +697,46 @@ kable(
 
 
 
+
 ---
 
-## Taking stock
+class: inverse, middle, center
+# Labor or land?
 
+
+
+---
+
+
+## Taking stock
+<br>
 - We see clear negative effects of pollution on productivity
   - Absolute deviation of exposure is approx. 8 days, meaning 2-3 percent change in productivity
-  - Using AD of PM, it's above 20 percent change
+  - Using AD of PM, it's above 20 percent change<br><br>
 - Key question: what is the driver?
   - Land?
-  - Labor?
+  - Labor?<br><br>
 - Hard to look explicitly at land, so let's look at labor
   - Specifically, effects based on predominant crop
 
 
 ---
 
+## Most common crop by village
 
-```{r crops, echo = FALSE, message = FALSE, warning = FALSE, dev='png', fig.height = 5, fig.cap = "Most common crop by village", fig.footer = list("Note: The figure shows the most common crop grown in each village, by area harvested.")}
+```{r crops, echo = FALSE, message = FALSE, warning = FALSE, dev='png'}
 
 village_shp <- village_shp %>% left_join(crops_all, by = c("shrid"))
 
 # plot
-ggplot() +
-  geom_sf(data = india_shape, fill = "white") +
-  geom_sf(data = village_shp, aes(fill = most_common), color = NA) +
-  scale_fill_brewer("Most common crop\nby area harvested", palette = "Set3") +
-  geom_sf(data = india_shape2, fill = NA, lwd = 0.01) +
-  theme_minimal()
+g2 <- ggplot() +
+        geom_sf(data = india_shape, fill = "white") +
+        geom_sf(data = village_shp, aes(fill = most_common), color = NA) +
+        scale_fill_brewer("Most common crop\nby area harvested", palette = "Set3") +
+        geom_sf(data = india_shape2, fill = NA, lwd = 0.01) +
+        theme_minimal() +
+        theme(plot.background = element_rect(fill = "#A7A9AC", color = "#A7A9AC"))
+ggdraw(g2) + theme(plot.background = element_rect(fill = "#A7A9AC", color = "#A7A9AC"))
 
 ```
 
@@ -681,9 +744,10 @@ ggplot() +
 
 ---
 
-## How does this help?
 
-- Different crops have different labor intensities
+## How does this help?
+<br>
+- Different crops have different labor intensities<br><br>
 - Rice has the highest (from Michler, 2020):
   - Rice: 1,767 hours per hectare
   - Next highest: cotton at 857.5 hours per hectare
@@ -696,6 +760,7 @@ ggplot() +
 
 ---
 
+
 ## Heterogeneity by rice growing regions
 
 ```{r yieldrice, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
@@ -707,11 +772,10 @@ kable(
       yieldrice,
       align = "cc", linesep = "", format = "html"
       ) %>%
-  column_spec(1, width = "3.5cm") %>%
-  column_spec(c(2:3),width = "2cm") %>%
+  column_spec(1, width = "8cm") %>%
+  column_spec(c(2:3),width = "5cm") %>%
   row_spec(7, bold = TRUE) %>%
-  row_spec(9, hline_after = TRUE) %>%
-  kable_classic_2()
+  row_spec(9, hline_after = TRUE)
 
 ```
 
@@ -720,10 +784,60 @@ kable(
 
 ---
 
-## Coal plants or overall pollution?
 
-- I use the location of coal plants to identify high-pollution areas
-- However, some coal plants open part-way through sample
+## Second possibilitiy: heterogeneity by month of the season
+<br>
+- Labor demand varies across the season<br><br>
+- Pollution may have larger effects during certain months 
+  - Between July and October, own farm labor allocation highest in July and October
+    (ICRISAT data)<br><br>
+- Effects on land should be higher in earlier months, effects on labor relatively higher during harvest
+
+
+
+
+
+
+---
+
+
+## Effects of pollution on productivity by month
+
+```{r monthlyyield, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+ggplot() +
+  # first add the coefficient estimates
+  geom_point(aes(x = 1:5, y = monthlycoefs$coefs)) +
+  # now CIs
+  geom_linerange(aes(x = 1:5, ymin = monthlycoefs$confint[,1], ymax = monthlycoefs$confint[,2])) +
+  geom_hline(yintercept = 0, lty = 2, color = "#006334") +
+  theme_minimal() +
+  labs(x = "Month of the ag. season", y = "Coefficient estimate of log pm 2.5") +
+  theme(plot.background = element_rect(fill = "#A7A9AC", color = "#A7A9AC"),
+        panel.background = element_rect(fill = "#A7A9AC", color = "#A7A9AC"))
+
+```
+
+
+
+
+
+
+---
+
+class: inverse, middle, center
+# Coal pollution or overall pollution?
+
+
+
+
+---
+
+
+## Coal plants or overall pollution?
+<br>
+- I use the location of coal plants to identify high-pollution areas<br><br>
+- However, some coal plants open part-way through sample<br><br>
 - Differences-in-differences combined with IV
   - Differences in coal pollution, specifically, and other forms of pollution
 
@@ -732,9 +846,10 @@ kable(
 
 ---
 
+
 ## Coal plants over time
 
-```{r plants, echo = FALSE, message = FALSE, warning = FALSE,}
+```{r plants, echo = FALSE, message = FALSE, warning = FALSE, dev.args = list(bg = "transparent")}
 
 ggplot() +
     geom_sf(data = india_shape, color = "gray85", fill = "gray80") +
@@ -747,7 +862,9 @@ ggplot() +
                       cumulative = FALSE
                       ) +
     labs(title = "year: {current_frame}") +
-    theme(legend.position = "none")
+    theme(legend.position = "none") +
+    theme(plot.background = element_rect(fill = "#A7A9AC", color = "#A7A9AC")) +
+    theme(panel.background = element_rect(fill = "#A7A9AC", color = "#A7A9AC"))
 
 
 
@@ -760,6 +877,7 @@ ggplot() +
 
 
 ---
+
 
 ## Coal plants or overall pollution?
 
@@ -772,11 +890,10 @@ kable(
       yield7ivdiffindiff,
       align = "cc", linesep = "", format = "html"
       ) %>%
-  column_spec(1, width = "3cm") %>%
-  column_spec(c(2:3),width = "2cm") %>%
+  column_spec(1, width = "8cm") %>%
+  column_spec(c(2:3),width = "5cm") %>%
   row_spec(7, bold = TRUE) %>%
-  row_spec(9, hline_after = TRUE) %>%
-  kable_classic_2()
+  row_spec(9, hline_after = TRUE)
 
 ```
 
@@ -786,16 +903,84 @@ kable(
 
 ---
 
-## Conclusion
+class: inverse, middle, center
+# Overall effects on agricultural productivity and conclusions
 
+
+---
+
+
+## Effects on overall agricultural productivity
+<br>
+- Match changes in pollution across districts with agricultural productivity estimates
+  - ICRISAT has district-level estimates from 2001 and 2011
+  - Three common crops: rice, wheat, maize<br><br>
+- Use most conservative pollution effect estimate: -0.233 from pre-coal estimates
+  - My sample overrepresents both pollution and coal pollution
+
+
+
+---
+
+
+## Effects on overall agricultural productivity
+<br>
+$$\Delta log(\mathrm{counterfactual})_{d}-0.223\times\Delta log(PM2.5)_{d} = \Delta log(\mathrm{actual})_{d},$$
+<br>
+- Use actual observed change in pollution to back out what *would have happened* if pollution had remained at 2001 levels
+- Winsorize changes in pollution at 95% (due to some large values)
+- Sum total output for entire country in each year
+
+
+
+
+---
+
+## Change in output and counterfactual, all districts
+<br><br>
+```{r counterfactualsums, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+options(scipen = 999)
+# sumtables
+sumtable <- matrix(NA, nrow = 3, ncol = 5)
+colnames(sumtable) <- c("", "2001 actual output", "2011 actual output", "2011 counterfactual", "Difference (pct.)")
+sumtable[,1] <- c("Rice", "Wheat", "Maize")
+sumtable[,2] <- round(as_vector(counterfactual[1,1:3]), 0)
+sumtable[,3] <- round(as_vector(counterfactual[1,4:6]), 0)
+sumtable[,4] <- round(as_vector(counterfactual[1,7:9]), 0)
+sumtable[,5] <- round((as_vector(counterfactual[1,10:12]) - 1)*100, 1)
+for (col in 2:4){
+  sumtable[1, col] <- as.character(commaNum(as.numeric(sumtable[1, col])))
+  sumtable[2, col] <- as.character(commaNum(as.numeric(sumtable[2, col])))
+  sumtable[3, col] <- as.character(commaNum(as.numeric(sumtable[3, col])))
+}
+
+kable(
+      sumtable,
+      align = "lcccc", format = "html", booktabs = TRUE, linesep = "", row.names = FALSE
+      ) %>%
+  column_spec(1, width = "4cm") %>%
+  column_spec(c(2:5),width = "4.6cm")
+
+```
+
+
+
+
+
+
+---
+
+
+## Conclusion
+<br>
 - Pollution highest in poorer countries
-  - South Asia, in particular
+  - South Asia, in particular<br><br>
 - Drivers of pollution are many
   - Coal plants
   - Transportation
   - Industry
   - Agriculture
-  - etc.
+  - etc.<br><br>
 - We already have plenty of evidence on effects of pollution on health
 
 
@@ -805,12 +990,13 @@ kable(
 
 ---
 
-## Conclusion
 
+## Conclusion
+<br>
 - Paper presents evidence that air pollution leads to large decreases in agricultural productivity
-  - Identification relies on within-village changes across seasons
+  - Identification relies on within-village changes across seasons<br><br>
 - Air pollution worsened by around 15% from 1998 to 2019
-  - Using most conservative result, this implies a decrease of around 9% in agricultural productivity
+  - Conservative results indicate decreases of between 3 and 5 percent in agricultural productivity <br><br>
 - Key finding: effects larger where crops are more labor intensive
 
 
@@ -820,11 +1006,12 @@ kable(
 
 ---
 
-## Conclusion
 
-- Overall cost/benefit way beyond scope of paper
+## Conclusion
+<br>
+- Overall cost/benefit way beyond scope of paper<br><br>
 - Instead, results point to importance of the location of pollution sources
-  - Downwind villages suffer
+  - Downwind villages suffer<br><br>
 - 30km radius indicates relatively long-range effects
 
 
