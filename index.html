@@ -4,7 +4,7 @@
     <title>Air pollution and agricultural productivity in a developing country</title>
     <meta charset="utf-8" />
     <meta name="author" content="Joshua D. Merfeld   KDI School and IZA" />
-    <meta name="date" content="2023-11-29" />
+    <meta name="date" content="2024-05-10" />
     <script src="index_files/header-attrs/header-attrs.js"></script>
     <script src="index_files/kePrint/kePrint.js"></script>
     <link href="index_files/lightable/lightable.css" rel="stylesheet" />
@@ -21,7 +21,7 @@ class: center, middle, inverse, title-slide
 ### Joshua D. Merfeld <br> KDI School and IZA
 ]
 .date[
-### 2023-11-29
+### 2024-05-10
 ]
 
 ---
@@ -75,6 +75,10 @@ class: center, middle, inverse, title-slide
       background-size: 20%;
     }
 
+.gray {
+  color: #7F7F7F;
+}
+
 &lt;/style&gt;
 
 
@@ -115,10 +119,26 @@ class: center, middle, inverse, title-slide
 
 &lt;br&gt;
 - General idea and data&lt;br&gt;&lt;br&gt;
-- Validating wind direction&lt;br&gt;&lt;br&gt;
 - Estimating effects of pollution on agricultural productivity&lt;br&gt;&lt;br&gt;
 - Heterogeneity, including by labor intensities of crops&lt;br&gt;&lt;br&gt;
-- Overall pollution vs. pollution specifically from coal
+- Overall pollution vs. pollution specifically from coal&lt;br&gt;&lt;br&gt;
+- Wrapping up
+
+
+
+
+
+---
+
+
+## Outline
+
+&lt;br&gt;
+- General idea and data&lt;br&gt;&lt;br&gt;
+- .gray[Estimating effects of pollution on agricultural productivity]&lt;br&gt;&lt;br&gt;
+- .gray[Heterogeneity, including by labor intensities of crops]&lt;br&gt;&lt;br&gt;
+- .gray[Overall pollution vs. pollution specifically from coal]&lt;br&gt;&lt;br&gt;
+- .gray[Wrapping up]
 
 
 
@@ -134,7 +154,78 @@ class: center, middle, inverse, title-slide
 - Identify high-pollution locations based on where coal plants open or will open
   - Coal plants open in areas where pollution is already high&lt;br&gt;&lt;br&gt;
 - Plot wind direction each day
-  - Exposure means wind blowing from high-pollution locations to village (within 30km)
+  - Exposure means wind blowing from high-pollution locations to village (within 30km)&lt;br&gt;&lt;br&gt;
+- Identification comes from changes in exposure to pollution *due to within-village variation* in annual wind direction
+
+
+
+
+
+
+
+---
+
+## Data sources
+&lt;table style='NAborder-bottom: 0;border-bottom: 0;border-bottom: 0; font-family: "Arial Narrow", "Source Sans Pro", sans-serif; margin-left: auto; margin-right: auto;' class=" lightable-classic-2"&gt;
+ &lt;thead&gt;
+  &lt;tr&gt;
+   &lt;th style="text-align:left;"&gt;   &lt;/th&gt;
+   &lt;th style="text-align:center;"&gt; source &lt;/th&gt;
+   &lt;th style="text-align:center;"&gt; geographic coverage &lt;/th&gt;
+   &lt;th style="text-align:center;"&gt; temporal coverage &lt;/th&gt;
+  &lt;/tr&gt;
+ &lt;/thead&gt;
+&lt;tbody&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; shapefile &lt;/td&gt;
+   &lt;td style="text-align:center;width: 5cm; "&gt; Asher et al. (2021) &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; India &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt;  &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; coal plants &lt;/td&gt;
+   &lt;td style="text-align:center;width: 5cm; "&gt; Global Energy Monitor &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; global &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; yearly &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; wind &lt;/td&gt;
+   &lt;td style="text-align:center;width: 5cm; "&gt; NCAR &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; global &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; daily &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; pollution &lt;/td&gt;
+   &lt;td style="text-align:center;width: 5cm; "&gt; Hammer et al. (2020) &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; global &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; monthly &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; agriculture &lt;/td&gt;
+   &lt;td style="text-align:center;width: 5cm; "&gt; Gangopadhya et al. (2022) &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; India &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; two seasons/year &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; weather &lt;/td&gt;
+   &lt;td style="text-align:center;width: 5cm; "&gt; TerraClimate &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; global &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; monthly &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; crops &lt;/td&gt;
+   &lt;td style="text-align:center;width: 5cm; "&gt; Monfreda et al. (2008) &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; global &lt;/td&gt;
+   &lt;td style="text-align:center;width: 3cm; "&gt; 2000 (year) &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;tfoot&gt;&lt;tr&gt;&lt;td style="padding: 0; " colspan="100%"&gt;
+&lt;sup&gt;&lt;/sup&gt; Global Energy Monitor: globalenergymonitor.org/projects/global-coal-plant-tracker.&lt;/td&gt;&lt;/tr&gt;&lt;/tfoot&gt;
+&lt;tfoot&gt;&lt;tr&gt;&lt;td style="padding: 0; " colspan="100%"&gt;
+&lt;sup&gt;&lt;/sup&gt; NCAR: climatedataguide.ucar.edu/.&lt;/td&gt;&lt;/tr&gt;&lt;/tfoot&gt;
+&lt;tfoot&gt;&lt;tr&gt;&lt;td style="padding: 0; " colspan="100%"&gt;
+&lt;sup&gt;&lt;/sup&gt; TerraClimate: www.climatologylab.org/terraclimate.html&lt;/td&gt;&lt;/tr&gt;&lt;/tfoot&gt;
+&lt;/table&gt;
 
 
 
@@ -282,6 +373,22 @@ class: center, middle, inverse, title-slide
 ---
 
 
+## Outline
+
+&lt;br&gt;
+- .gray[General idea and data]&lt;br&gt;&lt;br&gt;
+- Estimating effects of pollution on agricultural productivity&lt;br&gt;&lt;br&gt;
+- .gray[Heterogeneity, including by labor intensities of crops]&lt;br&gt;&lt;br&gt;
+- .gray[Overall pollution vs. pollution specifically from coal]&lt;br&gt;&lt;br&gt;
+- .gray[Wrapping up]
+
+
+
+
+
+---
+
+
 ## Empirical strategy
 
 &lt;br&gt;
@@ -302,11 +409,22 @@ Second stage
 
 
 
+---
+
+
+## Identification
+
+- Common question: **what if wind direction itself affects yields?**
+
 
 ---
 
-class: inverse, middle, center
-# Results
+## Wind direction - first 100 days of 2010
+
+&lt;img src="index_files/figure-html/id1-1.png" width="100%" /&gt;
+
+
+
 
 
 
@@ -395,7 +513,7 @@ class: inverse, middle, center
 &lt;/table&gt;
 
 - Likely endogenous
-  - Upward biased?
+  - Upward biased? Downard biased?
 
 
 
@@ -509,17 +627,17 @@ class: inverse, middle, center
 &lt;tbody&gt;
   &lt;tr&gt;
    &lt;td style="text-align:left;width: 8cm; "&gt; wind &lt;/td&gt;
-   &lt;td style="text-align:center;width: 4cm; "&gt; 0.0083*** &lt;/td&gt;
-   &lt;td style="text-align:center;width: 4cm; "&gt; 0.0085*** &lt;/td&gt;
-   &lt;td style="text-align:center;width: 4cm; "&gt; 0.0083*** &lt;/td&gt;
-   &lt;td style="text-align:center;width: 4cm; "&gt; 0.0085*** &lt;/td&gt;
+   &lt;td style="text-align:center;width: 4cm; "&gt; 0.008*** &lt;/td&gt;
+   &lt;td style="text-align:center;width: 4cm; "&gt; 0.008*** &lt;/td&gt;
+   &lt;td style="text-align:center;width: 4cm; "&gt; 0.008*** &lt;/td&gt;
+   &lt;td style="text-align:center;width: 4cm; "&gt; 0.008*** &lt;/td&gt;
   &lt;/tr&gt;
   &lt;tr&gt;
    &lt;td style="text-align:left;width: 8cm; "&gt;  &lt;/td&gt;
-   &lt;td style="text-align:center;width: 4cm; "&gt; (0.0002) &lt;/td&gt;
-   &lt;td style="text-align:center;width: 4cm; "&gt; (0.0002) &lt;/td&gt;
-   &lt;td style="text-align:center;width: 4cm; "&gt; (0.0002) &lt;/td&gt;
-   &lt;td style="text-align:center;width: 4cm; "&gt; (0.0002) &lt;/td&gt;
+   &lt;td style="text-align:center;width: 4cm; "&gt; (0.000) &lt;/td&gt;
+   &lt;td style="text-align:center;width: 4cm; "&gt; (0.000) &lt;/td&gt;
+   &lt;td style="text-align:center;width: 4cm; "&gt; (0.000) &lt;/td&gt;
+   &lt;td style="text-align:center;width: 4cm; "&gt; (0.000) &lt;/td&gt;
   &lt;/tr&gt;
   &lt;tr&gt;
    &lt;td style="text-align:left;width: 8cm; "&gt; weather &lt;/td&gt;
@@ -893,11 +1011,17 @@ class: inverse, middle, center
 
 
 
-
 ---
 
-class: inverse, middle, center
-# Labor or land?
+
+## Outline
+
+&lt;br&gt;
+- .gray[General idea and data]&lt;br&gt;&lt;br&gt;
+- .gray[Estimating effects of pollution on agricultural productivity]&lt;br&gt;&lt;br&gt;
+- Heterogeneity, including by labor intensities of crops&lt;br&gt;&lt;br&gt;
+- .gray[Overall pollution vs. pollution specifically from coal]&lt;br&gt;&lt;br&gt;
+- .gray[Wrapping up]
 
 
 
@@ -1047,11 +1171,17 @@ class: inverse, middle, center
 
 
 
-
 ---
 
-class: inverse, middle, center
-# Coal pollution or overall pollution?
+
+## Outline
+
+&lt;br&gt;
+- .gray[General idea and data]&lt;br&gt;&lt;br&gt;
+- .gray[Estimating effects of pollution on agricultural productivity]&lt;br&gt;&lt;br&gt;
+- .gray[Heterogeneity, including by labor intensities of crops]&lt;br&gt;&lt;br&gt;
+- Overall pollution vs. pollution specifically from coal&lt;br&gt;&lt;br&gt;
+- .gray[Wrapping up]
 
 
 
@@ -1166,8 +1296,15 @@ class: inverse, middle, center
 
 ---
 
-class: inverse, middle, center
-# Overall effects on agricultural productivity and conclusions
+
+## Outline
+
+&lt;br&gt;
+- .gray[General idea and data]&lt;br&gt;&lt;br&gt;
+- .gray[Estimating effects of pollution on agricultural productivity]&lt;br&gt;&lt;br&gt;
+- .gray[Heterogeneity, including by labor intensities of crops]&lt;br&gt;&lt;br&gt;
+- .gray[Overall pollution vs. pollution specifically from coal]&lt;br&gt;&lt;br&gt;
+- Wrapping up
 
 
 ---
@@ -1193,6 +1330,25 @@ class: inverse, middle, center
 - Use actual observed change in pollution to back out what *would have happened* if pollution had remained at 2001 levels
 - Winsorize changes in pollution at 95% (due to some large values)
 - Sum total output for entire country in each year
+
+
+
+
+
+---
+
+## Can't do individual crops...
+
+- I'd like to estimate regressions for each crop individually
+  - Better estimates of effects of pollution&lt;br&gt;&lt;br&gt;
+
+- However, small sample sizes for many of them:
+  - Rice: 759,200
+  - Wheat: 376,032
+  - Maize: 51,564
+  - Cotton (common cash crop): 21,960&lt;br&gt;&lt;br&gt;
+
+- Caveat: have to use one estimate for all crops
 
 
 
@@ -1235,6 +1391,26 @@ class: inverse, middle, center
   &lt;/tr&gt;
 &lt;/tbody&gt;
 &lt;/table&gt;
+
+
+
+
+
+
+
+---
+
+## Change in pollution
+&lt;img src="index_files/figure-html/pollutionincrease-1.png" width="100%" /&gt;
+
+
+
+
+
+---
+
+## Change in output, rice
+&lt;img src="index_files/figure-html/counterfactualwheat-1.png" width="100%" /&gt;
 
 
 

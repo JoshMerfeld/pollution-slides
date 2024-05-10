@@ -55,11 +55,8 @@ loadfonts()  # Must be run once in each session (markdown is a new "session" eac
 
 
 
-# We want to get the wd up to the main folder
-# Need to go up two levels
-setwd('../../..')
 # Double check
-getwd()    # check
+setwd("../../../")
 
 
 reportP <- function(pValue){
@@ -319,6 +316,10 @@ plantsexample <- st_crop(plantsexample, villageswind)
       background-size: 20%;
     }
 
+.gray {
+  color: #7F7F7F;
+}
+
 ```
 
 
@@ -368,10 +369,26 @@ style_duo(
 
 <br>
 - General idea and data<br><br>
-- Validating wind direction<br><br>
 - Estimating effects of pollution on agricultural productivity<br><br>
 - Heterogeneity, including by labor intensities of crops<br><br>
-- Overall pollution vs. pollution specifically from coal
+- Overall pollution vs. pollution specifically from coal<br><br>
+- Wrapping up
+
+
+
+
+
+---
+
+
+## Outline
+
+<br>
+- General idea and data<br><br>
+- .gray[Estimating effects of pollution on agricultural productivity]<br><br>
+- .gray[Heterogeneity, including by labor intensities of crops]<br><br>
+- .gray[Overall pollution vs. pollution specifically from coal]<br><br>
+- .gray[Wrapping up]
 
 
 
@@ -387,7 +404,74 @@ style_duo(
 - Identify high-pollution locations based on where coal plants open or will open
   - Coal plants open in areas where pollution is already high<br><br>
 - Plot wind direction each day
-  - Exposure means wind blowing from high-pollution locations to village (within 30km)
+  - Exposure means wind blowing from high-pollution locations to village (within 30km)<br><br>
+- Identification comes from changes in exposure to pollution *due to within-village variation* in annual wind direction
+
+
+
+
+
+
+
+---
+
+## Data sources
+```{r data, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+
+data <- matrix(NA, nrow = 7, ncol = 3)
+rownames(data) <- c("shapefile", "coal plants", "wind", "pollution", "agriculture", "weather", "crops")
+colnames(data) <- c("source", "geographic coverage", "temporal coverage")
+data[1,1] <- "Asher et al. (2021)"
+data[2,1] <- "Global Energy Monitor"
+data[3,1] <- "NCAR"
+data[4,1] <- "Hammer et al. (2020)"
+data[5,1] <- "Gangopadhya et al. (2022)"
+data[6,1] <- "TerraClimate"
+data[7,1] <- "Monfreda et al. (2008)"
+data[1,2] <- "India"
+data[2,2] <- "global"
+data[3,2] <- "global"
+data[4,2] <- "global"
+data[5,2] <- "India"
+data[6,2] <- "global"
+data[7,2] <- "global"
+data[1,3] <- " "
+data[2,3] <- "yearly"
+data[3,3] <- "daily"
+data[4,3] <- "monthly"
+data[5,3] <- "two seasons/year"
+data[6,3] <- "monthly"
+data[7,3] <- "2000 (year)"
+
+# Table
+kable(
+      data,
+      align = "ccccc", booktabs = TRUE, linesep = "", escape = TRUE, format = "html"
+      ) %>%
+  footnote(
+           general = "Global Energy Monitor: globalenergymonitor.org/projects/global-coal-plant-tracker.",
+           general_title = "",
+           threeparttable = TRUE,
+           footnote_as_chunk = TRUE
+           ) %>%
+  footnote(
+           general = "NCAR: climatedataguide.ucar.edu/.",
+           general_title = "",
+           threeparttable = TRUE,
+           footnote_as_chunk = TRUE
+           ) %>%
+  footnote(
+           general = "TerraClimate: www.climatologylab.org/terraclimate.html",
+           general_title = "",
+           threeparttable = TRUE,
+           footnote_as_chunk = TRUE
+           ) %>%
+  column_spec(1, width = "2cm") %>%
+  column_spec(2,width = "5cm") %>%
+  column_spec(c(3:4),width = "3cm") %>%
+  kable_classic_2()
+
+```
 
 
 
@@ -484,6 +568,22 @@ kable(
 ---
 
 
+## Outline
+
+<br>
+- .gray[General idea and data]<br><br>
+- Estimating effects of pollution on agricultural productivity<br><br>
+- .gray[Heterogeneity, including by labor intensities of crops]<br><br>
+- .gray[Overall pollution vs. pollution specifically from coal]<br><br>
+- .gray[Wrapping up]
+
+
+
+
+
+---
+
+
 ## Empirical strategy
 
 <br>
@@ -504,11 +604,58 @@ $$yield_{it} = \delta_{i} + \eta_{t} + \beta \hat{pm}_{it} + \theta f(weather_{i
 
 
 
+---
+
+
+## Identification
+
+- Common question: **what if wind direction itself affects yields?**
+
 
 ---
 
-class: inverse, middle, center
-# Results
+## Wind direction - first 100 days of 2010
+
+```{r id1, echo = FALSE, message = FALSE, warning = FALSE}
+
+villages <- read_sf(paste0("../../../data/spatial/villages_overlap/villages_overlap.shp"))
+villages <- villages %>% mutate(shrid = paste0(pc11_s_id, "-", pc11_tv_id)) %>%
+                          dplyr::select(shrid, state = ST_CEN_CD, district = DT_CEN_CD, state_name = ST_NM, district_name = DISTRICT)
+villages <- villages %>% st_set_crs(st_crs(districts))
+plantexample <- plants2010[30,]
+# crop villageswind to within 50km of plant
+villages <- st_crop(villages, st_buffer(plantexample, 30000))
+# Go through two months worth of days
+date <- as_date("2010-01-01")
+villageswind <- c()
+for (add_day in 1:100){
+  wind <- read_csv(paste0("../../../data/clean/wind_ntl/days/date_2010-", month(date), "-", day(date), ".csv")) %>% as_tibble()
+  wind <- wind[,1:2]
+  colnames(wind) <- c("shrid", "indicator")
+  villagestemp <- villages %>% left_join(wind, by = "shrid")
+  
+  villageswind <- rbind(villageswind, villagestemp)
+  
+  date <- date + 1
+}
+villageswind <- villageswind %>%
+  group_by(shrid) %>%
+  summarize(indicator = sum(indicator, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot() +
+    geom_sf(data = plantexample, color = "#006334", shape = 4, size = 3) + 
+    geom_sf(data = villageswind %>% filter(!is.na(indicator)),
+            aes(fill = indicator)) +
+    theme(legend.position = "none") +
+    scale_fill_viridis_c("Days of wind") +
+    theme(plot.background = element_rect(fill = "#A7A9AC", color = "#A7A9AC")) +
+    theme_bw()
+
+```
+
+
+
 
 
 
@@ -535,7 +682,7 @@ kable(
 ```
 
 - Likely endogenous
-  - Upward biased?
+  - Upward biased? Downard biased?
 
 
 
@@ -697,11 +844,17 @@ kable(
 
 
 
-
 ---
 
-class: inverse, middle, center
-# Labor or land?
+
+## Outline
+
+<br>
+- .gray[General idea and data]<br><br>
+- .gray[Estimating effects of pollution on agricultural productivity]<br><br>
+- Heterogeneity, including by labor intensities of crops<br><br>
+- .gray[Overall pollution vs. pollution specifically from coal]<br><br>
+- .gray[Wrapping up]
 
 
 
@@ -731,7 +884,7 @@ village_shp <- village_shp %>% left_join(crops_all, by = c("shrid"))
 # plot
 g2 <- ggplot() +
         geom_sf(data = india_shape, fill = "white") +
-        geom_sf(data = village_shp, aes(fill = most_common), color = NA) +
+        geom_sf(data = village_shp %>% filter(!is.na(most_common)), aes(fill = most_common), color = NA) +
         scale_fill_brewer("Most common crop\nby area harvested", palette = "Set3") +
         geom_sf(data = india_shape2, fill = NA, lwd = 0.01) +
         theme_minimal() +
@@ -822,11 +975,17 @@ ggplot() +
 
 
 
-
 ---
 
-class: inverse, middle, center
-# Coal pollution or overall pollution?
+
+## Outline
+
+<br>
+- .gray[General idea and data]<br><br>
+- .gray[Estimating effects of pollution on agricultural productivity]<br><br>
+- .gray[Heterogeneity, including by labor intensities of crops]<br><br>
+- Overall pollution vs. pollution specifically from coal<br><br>
+- .gray[Wrapping up]
 
 
 
@@ -903,8 +1062,15 @@ kable(
 
 ---
 
-class: inverse, middle, center
-# Overall effects on agricultural productivity and conclusions
+
+## Outline
+
+<br>
+- .gray[General idea and data]<br><br>
+- .gray[Estimating effects of pollution on agricultural productivity]<br><br>
+- .gray[Heterogeneity, including by labor intensities of crops]<br><br>
+- .gray[Overall pollution vs. pollution specifically from coal]<br><br>
+- Wrapping up
 
 
 ---
@@ -930,6 +1096,25 @@ $$\Delta log(\mathrm{counterfactual})_{d}-0.223\times\Delta log(PM2.5)_{d} = \De
 - Use actual observed change in pollution to back out what *would have happened* if pollution had remained at 2001 levels
 - Winsorize changes in pollution at 95% (due to some large values)
 - Sum total output for entire country in each year
+
+
+
+
+
+---
+
+## Can't do individual crops...
+
+- I'd like to estimate regressions for each crop individually
+  - Better estimates of effects of pollution<br><br>
+
+- However, small sample sizes for many of them:
+  - Rice: 759,200
+  - Wheat: 376,032
+  - Maize: 51,564
+  - Cotton (common cash crop): 21,960<br><br>
+
+- Caveat: have to use one estimate for all crops
 
 
 
@@ -960,6 +1145,46 @@ kable(
       ) %>%
   column_spec(1, width = "4cm") %>%
   column_spec(c(2:5),width = "4.6cm")
+
+```
+
+
+
+
+
+
+
+---
+
+## Change in pollution
+```{r pollutionincrease, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+dist <- read_sf("../../../data/counterfactual/distclean.shp")
+
+ggplot(dist) +
+  geom_sf(aes(fill = pm25_ch)) +
+  scale_fill_viridis_c("Increase in pollution") +
+  theme_bw()
+
+```
+
+
+
+
+
+---
+
+## Change in output, rice
+```{r counterfactualwheat, include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+dist <- read_sf("../../../data/counterfactual/distclean_change.shp")
+dist <- dist %>%
+  mutate(ricffct = ifelse(ricffct<1, 1, ifelse(ricffct>1.1, 1.1, ricffct)),
+    whtffct = ifelse(whtffct<1, 1, ifelse(whtffct>1.1, 1.1, whtffct)),
+    mazffct = ifelse(mazffct<1, 1, ifelse(mazffct>1.1, 1.1, mazffct)))
+
+ggplot(dist) +
+  geom_sf(aes(fill = (ricffct - 1)*100)) +
+  scale_fill_viridis_c("Counterfactual change (%)\nif no pollution change") +
+  theme_bw()
 
 ```
 
